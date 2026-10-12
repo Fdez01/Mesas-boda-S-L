@@ -315,29 +315,61 @@
     }
 
     function convertirInvitados(filas) {
-      const personas = [];
-      const agregar = (nombre, mesa) => {
-        nombre = String(nombre ?? "").trim(); mesa = String(mesa ?? "").trim();
-        if (nombre && mesa) personas.push({nombre, mesa, normal: normalizar(nombre)});
-      };
-      const cabecera = filas.findIndex(f => f.some(c => /^(nombre|nombre completo|invitado|nombre y apellido)$/.test(normalizar(c))) &&
-        f.some(c => /^(mesa|numero de mesa|mesa asignada)$/.test(normalizar(c))));
-      if (cabecera >= 0) {
-        const f = filas[cabecera].map(normalizar);
-        const n = f.findIndex(c => /^(nombre|nombre completo|invitado|nombre y apellido)$/.test(c));
-        const m = f.findIndex(c => /^(mesa|numero de mesa|mesa asignada)$/.test(c));
-        filas.slice(cabecera + 1).forEach(f => agregar(f[n], f[m]));
-      } else {
-        const mesas = new Map();
-        filas.forEach(f => f.forEach((valor, col) => {
-          const t = String(valor ?? "").trim();
-          const encabezado = t.match(/^mesa\s+([0-9]+|[ivxlcdm]+)$/i);
-          if (encabezado) { mesas.set(col, encabezado[1]); return; }
-          if (!t || !mesas.has(col) || /^\d+([.,]\d+)?$/.test(t) ||
-              /^(familia|sin mantel|total|cantidad)\b/.test(normalizar(t))) return;
-          agregar(t, mesas.get(col));
-        }));
+        const personas = [];
+        const columnas = new Map();
+
+  const agregar = (nombre, mesa) => {
+    nombre = String(nombre ?? "").trim();
+    mesa = String(mesa ?? "").trim();
+
+    if (nombre && mesa) {
+      personas.push({
+        nombre,
+        mesa,
+        normal: normalizar(nombre)
+      });
+    }
+  };
+
+  filas.forEach(fila => {
+    // Detectar encabezados Nombre / Mesa en todas las columnas.
+    fila.forEach((valor, columna) => {
+      const texto = normalizar(valor);
+
+      if (
+        ["nombre", "nombre completo", "invitado",
+         "nombre y apellido"].includes(texto)
+        && normalizar(fila[columna + 1]) === "mesa"
+      ) {
+        columnas.set(columna, columna + 1);
       }
+    });
+
+    // Evitar interpretar los encabezados como invitados.
+    columnas.forEach((colMesa, colNombre) => {
+      const nombre = fila[colNombre];
+      const mesa = fila[colMesa];
+
+      if (
+        ["nombre", "nombre completo", "invitado",
+         "nombre y apellido"].includes(normalizar(nombre))
+        && normalizar(mesa) === "mesa"
+      ) {
+        return;
+      }
+
+      agregar(nombre, mesa);
+    });
+  });
+
+  // Eliminar duplicados exactos de nombre y mesa.
+  return personas.filter((persona, indice) =>
+    personas.findIndex(otra =>
+      otra.normal === persona.normal &&
+      otra.mesa === persona.mesa
+    ) === indice
+  );
+}
       // Conserva personas con el mismo nombre en mesas distintas.
       return personas.filter((p, i) => personas.findIndex(q => q.normal === p.normal && q.mesa === p.mesa) === i);
     }
