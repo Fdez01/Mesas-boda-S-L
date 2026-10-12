@@ -58,7 +58,7 @@
       margin: 0 auto 28px;
       border-radius: 50%;
       border: 4px solid #ebe5d5;
-      transfomr: scale(1.30);
+      transform: scale(2.00);
     }
     .import-panel { margin-top: 28px; text-align: left; border: 1px solid var(--line); border-radius: 13px; padding: 14px; }
     .import-panel summary { cursor: pointer; color: var(--teal-dark); font-weight: 600; font-size: .85rem; }
@@ -316,62 +316,42 @@
     }
 
     function convertirInvitados(filas) {
-        const personas = [];
-        const columnas = new Map();
-
-  const agregar = (nombre, mesa) => {
-    nombre = String(nombre ?? "").trim();
-    mesa = String(mesa ?? "").trim();
-
-    if (nombre && mesa) {
-      personas.push({
-        nombre,
-        mesa,
-        normal: normalizar(nombre)
-      });
-    }
-  };
-
-  filas.forEach(fila => {
-    // Detectar encabezados Nombre / Mesa en todas las columnas.
-    fila.forEach((valor, columna) => {
-      const texto = normalizar(valor);
-
-      if (
-        ["nombre", "nombre completo", "invitado",
-         "nombre y apellido"].includes(texto)
-        && normalizar(fila[columna + 1]) === "mesa"
-      ) {
-        columnas.set(columna, columna + 1);
+      const personas = [];
+      if (!filas.length) return personas;
+      const encabezados = ["nombre", "nombre completo", "invitado", "nombre y apellido"];
+      const mesas = ["mesa", "numero de mesa", "mesa asignada"];
+      const columnas = new Map();
+      const agregar = (nombre, mesa) => {
+        nombre = String(nombre ?? "").trim();
+        mesa = String(mesa ?? "").trim();
+        if (nombre && mesa && !encabezados.includes(normalizar(nombre)) &&
+            !mesas.includes(normalizar(mesa))) {
+          personas.push({ nombre, mesa, normal: normalizar(nombre) });
+        }
+      };
+      for (const fila of filas) {
+        for (let col = 0; col < fila.length - 1; col++) {
+          if (encabezados.includes(normalizar(fila[col])) && mesas.includes(normalizar(fila[col + 1]))) {
+            columnas.set(col, col + 1);
+          }
+        }
+        for (const [colNombre, colMesa] of columnas) agregar(fila[colNombre], fila[colMesa]);
       }
-    });
-
-    // Evitar interpretar los encabezados como invitados.
-    columnas.forEach((colMesa, colNombre) => {
-      const nombre = fila[colNombre];
-      const mesa = fila[colMesa];
-
-      if (
-        ["nombre", "nombre completo", "invitado",
-         "nombre y apellido"].includes(normalizar(nombre))
-        && normalizar(mesa) === "mesa"
-      ) {
-        return;
+      // Admite también listas por bloques titulados MESA I, MESA II o MESA 1.
+      if (!columnas.size) {
+        const porColumna = new Map();
+        for (const fila of filas) {
+          fila.forEach((celda, col) => {
+            const valor = String(celda ?? "").trim();
+            const titulo = valor.match(/^mesa\s+([0-9]+|[ivxlcdm]+)$/i);
+            if (titulo) { porColumna.set(col, titulo[1].toUpperCase()); return; }
+            if (porColumna.has(col) && valor && !/^\d+([.,]\d+)?$/.test(valor) &&
+                !/^(familia|sin mantel|total|cantidad)\b/.test(normalizar(valor))) {
+              agregar(valor, porColumna.get(col));
+            }
+          });
+        }
       }
-
-      agregar(nombre, mesa);
-    });
-  });
-
-  // Eliminar duplicados exactos de nombre y mesa.
-  return personas.filter((persona, indice) =>
-    personas.findIndex(otra =>
-      otra.normal === persona.normal &&
-      otra.mesa === persona.mesa
-    ) === indice
-  );
-}
-      // Conserva personas con el mismo nombre en mesas distintas.
       return personas.filter((p, i) => personas.findIndex(q => q.normal === p.normal && q.mesa === p.mesa) === i);
     }
 
@@ -451,11 +431,11 @@
         if (!nuevos.length) throw new Error("No hay invitados válidos. Usa columnas Nombre y Mesa, o bloques MESA 1, MESA 2, etc.");
         invitados = nuevos;
         boton.disabled = false;
-        estado.textContent = "Lista actualizada. Escribe tu nombre para consultar tu mesa.";
+        estado.textContent = "Lista cargada correctamente. Ya puedes consultar tu mesa.";
       } catch (e) {
         invitados = [];
         boton.disabled = true;
-        estado.textContent = "No pudimos cargar la lista de invitados. " + e.message;
+        estado.textContent = "No pudimos cargar la lista de invitados. " + e.message + " Verifica que invitados.xlsx esté junto a index.html.";
       }
     }
 
@@ -473,7 +453,7 @@
       document.getElementById("tituloCoincidencias").textContent = busqueda.aproximadas ?
         "Encontramos nombres parecidos. Selecciona el tuyo:" : "Selecciona tu nombre para ver tu mesa:";
       opciones.replaceChildren();
-      busqueda.datos.forEach(({persona}) => {
+      busqueda.datos.slice(0, 40).forEach(({persona}) => {
         const b = document.createElement("button"); b.type = "button";
         b.textContent = persona.nombre;
         if (invitados.filter(p => p.normal === persona.normal).length > 1) b.textContent += " — Mesa " + persona.mesa;
