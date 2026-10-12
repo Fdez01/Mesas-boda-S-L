@@ -276,16 +276,7 @@
         <strong>No encontramos tu nombre.</strong><br>
         Revisa cómo lo escribiste o consulta con los organizadores.
       </section>
-      <details class="import-panel">
-        <summary>Organizadores</summary>
-        <label for="archivoExcel">Selecciona tu archivo Excel</label>
-        <input type="file" id="archivoExcel" accept=".xlsx,.xls">
-        <p class="hint">Importa un Excel nuevo cuando cambien las mesas. La lista se guarda solo en este navegador.</p>
-        <div id="selectorHoja" hidden>
-          <label for="hojaExcel">Hoja con la lista de invitados</label>
-          <select id="hojaExcel"></select>
-        </div>
-      </details>
+
     </section>
 
     <footer>
@@ -298,19 +289,12 @@
   <!-- SheetJS: lector Excel. Licencia Apache-2.0. -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script id="app-script">
-    /* CONFIGURACIÓN PARA EL ORGANIZADOR
-       Importa tu Excel usando el selector de la página, cada vez que necesites actualizarlo.
-       Formatos: bloques MESA 1, MESA 2... o columnas Nombre,Mesa.
-       La importación reemplaza la lista anterior y se guarda en este navegador.
-       Otros dispositivos necesitan importar el Excel por separado.
-       La biblioteca Excel se carga de Internet; el archivo se procesa localmente.
-       Tamaño de la foto: cambia 140px en .couple-photo.
-       Colores: edita las variables de :root.
+    /* PUBLICACIÓN: sube invitados.xlsx junto a index.html en GitHub.
+       Formatos compatibles: columnas Nombre y Mesa o bloques MESA 1, MESA 2.
+       La lista se descarga al abrir la página. No hay importación local.
+       AVISO: el Excel será públicamente accesible en GitHub Pages.
     */
-    const CONFIG = { minimoCaracteres: 3 };
-    const CLAVE_LISTA = "luis-sthacy-invitados-excel-v1";
-    let libroExcel = null;
-
+    const CONFIG = { minimoCaracteres: 3, archivoExcel: "./invitados.xlsx" };
     let invitados = [];
     const formulario = document.getElementById("buscador");
     const campoNombre = document.getElementById("nombre");
@@ -320,8 +304,6 @@
     const opciones = document.getElementById("opciones");
     const estado = document.getElementById("estadoDatos");
     const boton = formulario.querySelector("button");
-    const archivoExcel = document.getElementById("archivoExcel");
-    const hojaExcel = document.getElementById("hojaExcel");
 
     function normalizar(texto) {
       return String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -410,61 +392,35 @@
       resultado.classList.add("show");
     }
 
-    function usarHojaSeleccionada() {
-      ocultarMensajes();
-      try {
-        const filas = XLSX.utils.sheet_to_json(libroExcel.Sheets[hojaExcel.value], {header: 1, defval: "", raw: false});
-        const nuevos = convertirInvitados(filas);
-        if (!nuevos.length) throw new Error("No hay invitados. Usa bloques MESA N o columnas Nombre y Mesa.");
-        invitados = nuevos; boton.disabled = false;
-        estado.textContent = "Excel importado: " + invitados.length + " invitados. Ya puedes consultar las mesas.";
-        try { localStorage.setItem(CLAVE_LISTA, JSON.stringify(invitados)); }
-        catch (_) { estado.textContent += " No se pudo guardar en este navegador; vuelve a importar al abrir la página."; }
-      } catch (e) {
-        invitados = []; boton.disabled = true;
-        try { localStorage.removeItem(CLAVE_LISTA); } catch (_) {}
-        estado.textContent = e.message;
-      }
-    }
-
-    archivoExcel.addEventListener("change", async () => {
-      const archivo = archivoExcel.files[0];
-      if (!archivo) return;
-      ocultarMensajes(); archivoExcel.disabled = true; boton.disabled = true;
-      estado.textContent = "Leyendo el Excel…";
-      try {
-        if (typeof XLSX === "undefined") throw new Error("No se cargó el lector Excel. Conéctate a Internet y vuelve a abrir la página.");
-        if (!/\.xlsx?$/i.test(archivo.name)) throw new Error("Selecciona un archivo .xlsx o .xls.");
-        if (archivo.size > 10 * 1024 * 1024) throw new Error("Selecciona un Excel de menos de 10 MB.");
-        libroExcel = XLSX.read(await archivo.arrayBuffer(), {type: "array"});
-        if (!libroExcel.SheetNames.length) throw new Error("El Excel no contiene hojas.");
-        hojaExcel.replaceChildren();
-        libroExcel.SheetNames.forEach(nombre => {
-          const opcion = document.createElement("option"); opcion.value = nombre; opcion.textContent = nombre; hojaExcel.appendChild(opcion);
-        });
-        document.getElementById("selectorHoja").hidden = libroExcel.SheetNames.length < 2;
-        usarHojaSeleccionada();
-      } catch (e) {
-        estado.textContent = "No se importó el archivo. " + e.message;
-        if (invitados.length) estado.textContent += " Se conserva la lista anterior.";
-        boton.disabled = !invitados.length;
-      } finally { archivoExcel.disabled = false; archivoExcel.value = ""; }
-    });
-    hojaExcel.addEventListener("change", usarHojaSeleccionada);
-
-    function restaurarLista() {
+    async function cargarInvitados() {
       boton.disabled = true;
-      estado.textContent = "La lista aún no está cargada. Los organizadores pueden importarla en el apartado de abajo.";
+      estado.textContent = "Cargando lista de invitados…";
       try {
-        const guardados = JSON.parse(localStorage.getItem(CLAVE_LISTA) || "[]");
-        if (!Array.isArray(guardados)) return;
-        invitados = guardados.filter(p => typeof p.nombre === "string" && typeof p.mesa === "string" && p.nombre.trim() && p.mesa.trim())
-          .map(p => ({nombre: p.nombre, mesa: p.mesa, normal: normalizar(p.nombre)}));
-        if (invitados.length) {
-          boton.disabled = false;
-          estado.textContent = "Lista guardada: " + invitados.length + " invitados. Importa otro Excel para actualizarla.";
+        if (typeof XLSX === "undefined") throw new Error("No se pudo cargar el lector de Excel. Comprueba tu conexión a Internet.");
+        // Evita utilizar una versión anterior almacenada en caché.
+        const url = new URL(CONFIG.archivoExcel, window.location.href);
+        url.searchParams.set("actualizacion", String(Date.now()));
+        const respuesta = await fetch(url.href, {cache: "no-store"});
+        if (!respuesta.ok) throw new Error("No encontramos invitados.xlsx en el repositorio publicado (HTTP " + respuesta.status + ").");
+        const datos = await respuesta.arrayBuffer();
+        if (!datos.byteLength || datos.byteLength > 10 * 1024 * 1024) throw new Error("El Excel está vacío o supera 10 MB.");
+        const libro = XLSX.read(datos, {type: "array"});
+        if (!libro.SheetNames.length) throw new Error("El Excel no contiene hojas.");
+        let nuevos = [];
+        for (const nombreHoja of libro.SheetNames) {
+          const filas = XLSX.utils.sheet_to_json(libro.Sheets[nombreHoja], {header: 1, defval: "", raw: false});
+          nuevos = convertirInvitados(filas);
+          if (nuevos.length) break;
         }
-      } catch (_) {}
+        if (!nuevos.length) throw new Error("No hay invitados válidos. Usa columnas Nombre y Mesa, o bloques MESA 1, MESA 2, etc.");
+        invitados = nuevos;
+        boton.disabled = false;
+        estado.textContent = "Lista actualizada. Escribe tu nombre para consultar tu mesa.";
+      } catch (e) {
+        invitados = [];
+        boton.disabled = true;
+        estado.textContent = "No pudimos cargar la lista de invitados. " + e.message;
+      }
     }
 
     formulario.addEventListener("submit", evento => {
@@ -474,7 +430,7 @@
         mostrarError("Escribe al menos " + CONFIG.minimoCaracteres + " letras de tu nombre o apellido."); campoNombre.focus(); return;
       }
       if (consulta.split(" ").length > 8 || consulta.length > 120) { mostrarError("Escribe un nombre o apellido más corto."); return; }
-      if (!invitados.length) { mostrarError("Importa el Excel de invitados para consultar las mesas."); return; }
+      if (!invitados.length) { mostrarError("La lista de invitados aún no está disponible. Inténtalo nuevamente más tarde."); return; }
       const busqueda = buscarPersonas(consulta);
       if (!busqueda.datos.length) { mostrarError("No encontramos tu nombre. Prueba con tu apellido o consulta con los organizadores."); return; }
       if (busqueda.datos.length === 1 && busqueda.datos[0].persona.normal === consulta) { mostrarMesa(busqueda.datos[0].persona); return; }
@@ -490,7 +446,7 @@
       lista.classList.add("show");
     });
     campoNombre.addEventListener("input", ocultarMensajes);
-    restaurarLista();
+    cargarInvitados();
   </script>
 </body>
 </html>
