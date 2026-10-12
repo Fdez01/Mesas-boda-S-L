@@ -331,7 +331,7 @@
         const mesas = new Map();
         filas.forEach(f => f.forEach((valor, col) => {
           const t = String(valor ?? "").trim();
-          const encabezado = t.match(/^mesa\s+(\d+)$/i);
+          const encabezado = t.match(/^mesa\s+([0-9]+|[ivxlcdm]+)$/i);
           if (encabezado) { mesas.set(col, encabezado[1]); return; }
           if (!t || !mesas.has(col) || /^\d+([.,]\d+)?$/.test(t) ||
               /^(familia|sin mantel|total|cantidad)\b/.test(normalizar(t))) return;
@@ -413,8 +413,7 @@
         let nuevos = [];
         for (const nombreHoja of libro.SheetNames) {
           const filas = XLSX.utils.sheet_to_json(libro.Sheets[nombreHoja], {header: 1, defval: "", raw: false});
-          nuevos = convertirInvitados(filas);
-          if (nuevos.length) break;
+          nuevos.push(...convertirInvitados(filas));
         }
         if (!nuevos.length) throw new Error("No hay invitados válidos. Usa columnas Nombre y Mesa, o bloques MESA 1, MESA 2, etc.");
         invitados = nuevos;
